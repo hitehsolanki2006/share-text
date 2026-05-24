@@ -10,6 +10,3 @@
 [functions]
   directory = "netlify/functions"
   node_bundler = "esbuild"
-  
-[[functions.render]]
-  node_bundler = "esbuild"
