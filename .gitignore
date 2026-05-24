@@ -9,6 +9,7 @@ dist/
 .output/
 .vercel/
 .vinxi/
+netlify/functions/
 
 # Environment variables
 .env
