@@ -9,4 +9,5 @@
 
 [functions]
   directory = "netlify/functions"
-  node_bundler = "esbuild"
+  node_bundler = "none"
+  included_files = ["../../.output/server/**", "../../node_modules/**"]
