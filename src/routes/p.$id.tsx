@@ -29,6 +29,7 @@ export const Route = createFileRoute("/p/$id")({
 
 type State =
   | { kind: "loading" }
+  | { kind: "needs-key" }
   | { kind: "needs-password"; salt: string }
   | { kind: "ok"; text: string; expiresAt: string; burn: boolean }
   | { kind: "error"; code: "not-found" | "expired" | "burned" | "bad-key" | "wrong-password" | "unknown"; message?: string };
@@ -40,6 +41,7 @@ function ViewPage() {
 
   const [state, setState] = useState<State>({ kind: "loading" });
   const [password, setPassword] = useState("");
+  const [userKey, setUserKey] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [copied, setCopied] = useState(false);
   const [now, setNow] = useState(Date.now());
@@ -61,7 +63,14 @@ function ViewPage() {
           setState({ kind: "needs-password", salt: m.salt ?? "" });
           return;
         }
-        await tryDecrypt();
+        // Check if we have the key in URL
+        const hasKey = window.location.hash.startsWith("#");
+        if (!hasKey) {
+          setState({ kind: "needs-key" });
+          return;
+        }
+        // Ask for decryption key code
+        setState({ kind: "needs-key" });
       } catch (e) {
         setState({ kind: "error", code: "unknown", message: (e as Error).message });
       }
@@ -69,7 +78,7 @@ function ViewPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
-  async function tryDecrypt(pwd?: string) {
+  async function tryDecrypt(pwd?: string, key?: string) {
     setSubmitting(true);
     try {
       const r = await consume({ data: { id } });
@@ -87,10 +96,16 @@ function ViewPage() {
           salt: r.salt,
           keyFragment,
           password: pwd,
+          userKey: key,
         });
         setState({ kind: "ok", text, expiresAt: r.expiresAt, burn: false });
-      } catch {
-        setState({ kind: "error", code: pwd ? "wrong-password" : "bad-key" });
+      } catch (err) {
+        const error = err as Error;
+        if (error.message === "invalid-key-code") {
+          setState({ kind: "error", code: "bad-key" });
+        } else {
+          setState({ kind: "error", code: pwd ? "wrong-password" : "bad-key" });
+        }
       }
     } catch (e) {
       setState({ kind: "error", code: "unknown", message: (e as Error).message });
@@ -120,6 +135,37 @@ function ViewPage() {
       <section className="container mx-auto max-w-3xl px-4 py-12 sm:py-16 animate-fade-in-up">
         {state.kind === "loading" && <LoadingCard />}
 
+        {state.kind === "needs-key" && (
+          <div className="glass rounded-2xl p-8 text-center shadow-card">
+            <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-secondary">
+              <KeyRound className="h-5 w-5 text-primary" />
+            </div>
+            <h1 className="text-xl font-semibold">Decryption key required</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Enter the 7-digit code that was shared with you.
+            </p>
+            <div className="mx-auto mt-5 flex max-w-sm gap-2">
+              <input
+                type="text"
+                value={userKey}
+                onChange={(e) => setUserKey(e.target.value.replace(/\D/g, '').slice(0, 7))}
+                onKeyDown={(e) => e.key === "Enter" && userKey.length === 7 && tryDecrypt(undefined, userKey)}
+                placeholder="0000000"
+                maxLength={7}
+                className="font-mono w-full rounded-lg border border-glass-border bg-background/40 px-3 py-2.5 text-center text-2xl font-bold tracking-widest outline-none focus:border-primary/50"
+                autoFocus
+              />
+              <button
+                onClick={() => tryDecrypt(undefined, userKey)}
+                disabled={submitting || userKey.length !== 7}
+                className="rounded-lg bg-gradient-primary px-4 text-sm font-medium text-primary-foreground glow disabled:opacity-50"
+              >
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : "Decrypt"}
+              </button>
+            </div>
+          </div>
+        )}
+
         {state.kind === "needs-password" && (
           <div className="glass rounded-2xl p-8 text-center shadow-card">
             <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-full bg-secondary">
@@ -134,13 +180,13 @@ function ViewPage() {
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && tryDecrypt(password)}
+                onKeyDown={(e) => e.key === "Enter" && tryDecrypt(password, undefined)}
                 placeholder="Enter password"
                 className="font-mono w-full rounded-lg border border-glass-border bg-background/40 px-3 py-2.5 text-sm outline-none focus:border-primary/50"
                 autoFocus
               />
               <button
-                onClick={() => tryDecrypt(password)}
+                onClick={() => tryDecrypt(password, undefined)}
                 disabled={submitting || !password}
                 className="rounded-lg bg-gradient-primary px-4 text-sm font-medium text-primary-foreground glow disabled:opacity-50"
               >

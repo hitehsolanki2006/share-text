@@ -37,7 +37,7 @@ async function randomKey() {
 export interface EncryptResult {
   ciphertext: string; // base64url
   iv: string;         // base64url
-  keyFragment: string | null; // url fragment (null when password-protected)
+  keyFragment: string | null; // 6-7 digit code (null when password-protected)
   salt: string | null; // base64url, only when password-protected
 }
 
@@ -53,7 +53,12 @@ export async function encryptText(plaintext: string, password?: string): Promise
   } else {
     key = await randomKey();
     const raw = new Uint8Array(await crypto.subtle.exportKey("raw", key));
-    keyFragment = b64url(raw);
+    // Generate 6-7 digit code from key
+    const keyHash = Array.from(raw.slice(0, 4))
+      .reduce((acc, byte) => acc + byte, 0);
+    keyFragment = String(keyHash % 10000000).padStart(7, '0');
+    // Store full key in keyFragment for now (we'll use the code for verification)
+    keyFragment = b64url(raw) + ':' + keyFragment;
   }
 
   const ct = new Uint8Array(
@@ -78,6 +83,7 @@ export async function decryptText(opts: {
   keyFragment?: string | null;
   salt?: string | null;
   password?: string;
+  userKey?: string; // 6-7 digit code entered by user
 }): Promise<string> {
   const iv = fromB64url(opts.iv);
   const ct = fromB64url(opts.ciphertext);
@@ -88,13 +94,39 @@ export async function decryptText(opts: {
     key = await deriveKeyFromPassword(opts.password, fromB64url(opts.salt));
   } else {
     if (!opts.keyFragment) throw new Error("missing-key");
-    key = await crypto.subtle.importKey(
-      "raw",
-      fromB64url(opts.keyFragment) as unknown as BufferSource,
-      { name: "AES-GCM" },
-      false,
-      ["decrypt"],
-    );
+    
+    // Check if keyFragment contains verification code
+    if (opts.keyFragment.includes(':')) {
+      // Extract full key and verification code
+      const [fullKey, verificationCode] = opts.keyFragment.split(':');
+      
+      // Verify user entered correct code (if userKey is provided)
+      if (opts.userKey) {
+        if (opts.userKey !== verificationCode) {
+          throw new Error("invalid-key-code");
+        }
+      } else {
+        // No userKey provided, but we need it
+        throw new Error("key-code-required");
+      }
+      
+      key = await crypto.subtle.importKey(
+        "raw",
+        fromB64url(fullKey) as unknown as BufferSource,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"],
+      );
+    } else {
+      // Old format without verification code
+      key = await crypto.subtle.importKey(
+        "raw",
+        fromB64url(opts.keyFragment) as unknown as BufferSource,
+        { name: "AES-GCM" },
+        false,
+        ["decrypt"],
+      );
+    }
   }
 
   const pt = await crypto.subtle.decrypt(

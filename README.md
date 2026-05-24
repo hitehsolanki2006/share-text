@@ -35,8 +35,8 @@ cp .env.example .env
 
 Edit `.env` and add:
 - `ADMIN_PASSWORD` - Your admin dashboard password
-- `KV_REST_API_URL` - From Vercel KV dashboard
-- `KV_REST_API_TOKEN` - From Vercel KV dashboard
+- `KV_REST_API_URL` - From Upstash Redis dashboard
+- `KV_REST_API_TOKEN` - From Upstash Redis dashboard
 
 3. **Run development server:**
 ```bash
@@ -50,12 +50,66 @@ bun run dev
 npm run build
 ```
 
-## Vercel KV Setup
+## Deploy to Netlify
 
-1. Go to your Vercel project dashboard
-2. Navigate to Storage → Create Database → KV
-3. Copy the `KV_REST_API_URL` and `KV_REST_API_TOKEN`
-4. Add them to your `.env` file
+### Option 1: Connect GitHub Repository (Recommended)
+
+1. **Push your code to GitHub** (if not already done):
+   ```bash
+   git add .
+   git commit -m "Ready for Netlify deployment"
+   git push origin main
+   ```
+
+2. **Go to Netlify:**
+   - Visit: https://app.netlify.com/
+   - Click "Add new site" → "Import an existing project"
+   - Choose "GitHub"
+   - Select your `share-text` repository
+
+3. **Configure Build Settings:**
+   - Build command: `npm run build`
+   - Publish directory: `.output/public`
+   - Functions directory: `.output/server`
+   - Click "Deploy site"
+
+4. **Add Environment Variables:**
+   - Go to Site settings → Environment variables
+   - Add these variables:
+     ```
+     ADMIN_PASSWORD=your-secure-password
+     KV_REST_API_URL=your-upstash-redis-url
+     KV_REST_API_TOKEN=your-upstash-redis-token
+     ```
+
+5. **Redeploy:**
+   - Go to Deploys → Trigger deploy → Deploy site
+
+### Option 2: Netlify CLI
+
+```bash
+# Install Netlify CLI
+npm install -g netlify-cli
+
+# Login to Netlify
+netlify login
+
+# Deploy
+netlify deploy --prod
+```
+
+Your site will be live at: `https://your-site-name.netlify.app`
+
+1. Go to https://console.upstash.com/
+2. Sign up (use GitHub login)
+3. Click "Create Database"
+4. Choose:
+   - Name: `sharetext`
+   - Type: **Regional** (free tier)
+   - Region: Closest to you
+5. After creation, scroll to **"REST API"** section
+6. Copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`
+7. Add them to your `.env` file as `KV_REST_API_URL` and `KV_REST_API_TOKEN`
 
 ## Security
 

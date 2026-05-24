@@ -43,6 +43,7 @@ function HomePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [shareUrl, setShareUrl] = useState<string | null>(null);
+  const [decryptionKey, setDecryptionKey] = useState<string | null>(null);
 
   const count = useMemo(() => text.length, [text]);
   const canSubmit = text.trim().length > 0 && !loading && (!usePassword || password.length >= 4);
@@ -52,7 +53,7 @@ function HomePage() {
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const id = randomId(12);
+      const id = randomId(8); // Shorter ID: 8 characters instead of 12
       const enc = await encryptText(text, usePassword ? password : undefined);
       await create({
         data: {
@@ -65,8 +66,19 @@ function HomePage() {
           expirationMinutes: expiration,
         },
       });
-      const url = `${window.location.origin}/p/${id}${enc.keyFragment ? `#${enc.keyFragment}` : ""}`;
+      
+      // Extract decryption key code
+      let keyCode = "";
+      let fullKeyFragment = "";
+      if (enc.keyFragment) {
+        const [fullKey, code] = enc.keyFragment.split(':');
+        keyCode = code;
+        fullKeyFragment = enc.keyFragment; // Store full fragment with code
+      }
+      
+      const url = `${window.location.origin}/p/${id}${fullKeyFragment ? `#${fullKeyFragment}` : ""}`;
       setShareUrl(url);
+      setDecryptionKey(keyCode);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to create link");
     } finally {
@@ -80,6 +92,7 @@ function HomePage() {
     setUsePassword(false);
     setBurn(false);
     setShareUrl(null);
+    setDecryptionKey(null);
   }
 
   return (
@@ -190,9 +203,10 @@ function HomePage() {
         </div>
       </section>
 
-      {shareUrl && (
+      {shareUrl && decryptionKey && (
         <SuccessModal
           url={shareUrl}
+          decryptionKey={decryptionKey}
           onClose={() => setShareUrl(null)}
           onCreateAnother={resetAll}
         />
