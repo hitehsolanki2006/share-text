@@ -1,6 +1,0 @@
-{
-  "name": "sharetext",
-  "compatibility_date": "2024-01-01",
-  "main": ".output/server/index.mjs",
-  "assets": { "directory": ".output/public", "binding": "ASSETS" }
-}

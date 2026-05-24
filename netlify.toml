@@ -1,13 +1,12 @@
 [build]
   command = "npm run build"
   publish = ".output/public"
-  functions = ".output/server"
+
+[functions]
+  directory = ".output/server"
+  node_bundler = "esbuild"
 
 [[redirects]]
   from = "/*"
-  to = "/.netlify/functions/server"
+  to = "/index.html"
   status = 200
-
-[functions]
-  node_bundler = "esbuild"
-  external_node_modules = ["@vercel/kv"]
