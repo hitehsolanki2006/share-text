@@ -48,6 +48,13 @@ if (existsSync(netlifyFunctionsDir)) {
 }
 mkdirSync(netlifyFunctionsDir, { recursive: true });
 
+// Copy the entire .output/server directory into the functions directory
+// so it's available at runtime
+const functionsServerDir = join(netlifyFunctionsDir, '.output', 'server');
+mkdirSync(join(netlifyFunctionsDir, '.output'), { recursive: true });
+cpSync(outputServerDir, functionsServerDir, { recursive: true });
+console.log('✅ Copied server files to netlify/functions/.output/server');
+
 // Create a package.json for the function to mark it as ESM
 const functionPackageJson = {
   type: "module"
@@ -58,15 +65,15 @@ writeFileSync(
 );
 
 // Create a Netlify function that imports the TanStack Start server
-const functionContent = `import { createRequire } from 'module';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+// Use relative path since server files are now in the same function directory
+const functionContent = `import { fileURLToPath } from 'url';
+import { dirname } from 'path';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-// Dynamically import the server entry
-const serverModule = await import('../../.output/server/server.js');
+// Import the server entry from the local .output/server directory
+const serverModule = await import('./.output/server/server.js');
 const serverEntry = serverModule.default;
 
 export const handler = async (event, context) => {
@@ -144,4 +151,5 @@ const functionPath = join(netlifyFunctionsDir, 'render.mjs');
 writeFileSync(functionPath, functionContent);
 console.log('✅ Created Netlify function at netlify/functions/render.mjs');
 
+console.log('✅ Netlify build preparation complete!');
 console.log('✅ Netlify build preparation complete!');
