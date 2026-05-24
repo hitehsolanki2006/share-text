@@ -1,4 +1,4 @@
-import { mkdirSync, existsSync, writeFileSync, cpSync } from 'fs';
+import { mkdirSync, existsSync, writeFileSync, cpSync, rmSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -7,64 +7,67 @@ const rootDir = join(__dirname, '..');
 
 console.log('🚀 Starting Netlify build preparation...');
 
-// Check for build output in dist/ or .output/
-let serverDir = join(rootDir, '.output', 'server');
-let clientDir = join(rootDir, '.output', 'public');
-
-if (!existsSync(serverDir)) {
-  serverDir = join(rootDir, 'dist', 'server');
-  clientDir = join(rootDir, 'dist', 'client');
-}
+// Build outputs to dist/ by default
+const serverDir = join(rootDir, 'dist', 'server');
+const clientDir = join(rootDir, 'dist', 'client');
 
 // Check if build output exists
 if (!existsSync(serverDir)) {
-  console.error('❌ Server build not found at .output/server or dist/server');
+  console.error('❌ Server build not found at dist/server');
   process.exit(1);
 }
 
 if (!existsSync(clientDir)) {
-  console.error('❌ Client build not found at .output/public or dist/client');
+  console.error('❌ Client build not found at dist/client');
   process.exit(1);
 }
 
-console.log('✅ Build output found at:', serverDir);
+console.log('✅ Build output found');
+
+// Clean and create .output directory
+const outputDir = join(rootDir, '.output');
+if (existsSync(outputDir)) {
+  rmSync(outputDir, { recursive: true, force: true });
+}
+mkdirSync(outputDir, { recursive: true });
 
 // Copy client files to .output/public for Netlify
-const outputPublicDir = join(rootDir, '.output', 'public');
-if (!existsSync(join(rootDir, '.output'))) {
-  mkdirSync(join(rootDir, '.output'), { recursive: true });
-}
+const outputPublicDir = join(outputDir, 'public');
 cpSync(clientDir, outputPublicDir, { recursive: true });
 console.log('✅ Copied client files to .output/public');
 
 // Copy server files to .output/server
-const outputServerDir = join(rootDir, '.output', 'server');
+const outputServerDir = join(outputDir, 'server');
 cpSync(serverDir, outputServerDir, { recursive: true });
 console.log('✅ Copied server files to .output/server');
 
 // Create netlify functions directory
 const netlifyFunctionsDir = join(rootDir, 'netlify', 'functions');
-if (!existsSync(netlifyFunctionsDir)) {
-  mkdirSync(netlifyFunctionsDir, { recursive: true });
+if (existsSync(netlifyFunctionsDir)) {
+  rmSync(netlifyFunctionsDir, { recursive: true, force: true });
 }
+mkdirSync(netlifyFunctionsDir, { recursive: true });
+
+// Create a package.json for the function to mark it as ESM
+const functionPackageJson = {
+  type: "module"
+};
+writeFileSync(
+  join(netlifyFunctionsDir, 'package.json'),
+  JSON.stringify(functionPackageJson, null, 2)
+);
 
 // Create a Netlify function that imports the TanStack Start server
-const functionContent = `
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
+const functionContent = `import { createRequire } from 'module';
 import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
-// Import the server entry
-let serverEntry;
-try {
-  const serverModule = await import('../../.output/server/server.js');
-  serverEntry = serverModule.default;
-} catch (error) {
-  console.error('Failed to import server:', error);
-  throw error;
-}
+// Dynamically import the server entry
+const serverModule = await import('../../.output/server/server.js');
+const serverEntry = serverModule.default;
 
 export const handler = async (event, context) => {
   try {
@@ -78,17 +81,31 @@ export const handler = async (event, context) => {
     // Create a Web Request object
     const headers = new Headers();
     Object.entries(event.headers).forEach(([key, value]) => {
-      headers.set(key, value);
+      if (value) headers.set(key, value);
     });
 
-    const request = new Request(url, {
+    const requestInit = {
       method: event.httpMethod,
       headers: headers,
-      body: event.body ? (event.isBase64Encoded ? Buffer.from(event.body, 'base64').toString() : event.body) : undefined,
-    });
+    };
+
+    // Add body if present
+    if (event.body) {
+      if (event.isBase64Encoded) {
+        requestInit.body = Buffer.from(event.body, 'base64').toString();
+      } else {
+        requestInit.body = event.body;
+      }
+    }
+
+    const request = new Request(url, requestInit);
 
     // Call the TanStack Start server handler
-    const response = await serverEntry.fetch(request, {}, context);
+    const response = await serverEntry.fetch(request, {
+      KV_REST_API_URL: process.env.KV_REST_API_URL,
+      KV_REST_API_TOKEN: process.env.KV_REST_API_TOKEN,
+      ADMIN_PASSWORD: process.env.ADMIN_PASSWORD,
+    }, context);
     
     // Convert Web Response to Netlify response format
     const responseBody = await response.text();
@@ -104,10 +121,19 @@ export const handler = async (event, context) => {
     };
   } catch (error) {
     console.error('❌ Function error:', error);
+    console.error('Stack:', error.stack);
     return {
       statusCode: 500,
-      headers: { 'Content-Type': 'text/html' },
-      body: '<h1>Internal Server Error</h1><p>' + error.message + '</p>',
+      headers: { 'Content-Type': 'text/html; charset=utf-8' },
+      body: \`<!DOCTYPE html>
+<html>
+<head><title>Error</title></head>
+<body>
+  <h1>Internal Server Error</h1>
+  <p>\${error.message}</p>
+  <pre>\${error.stack}</pre>
+</body>
+</html>\`,
     };
   }
 };
